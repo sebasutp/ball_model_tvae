@@ -2,6 +2,12 @@
 import numpy as np
 import keras
 import tensorflow as tf
+import traj_pred.utils as utils
+import json
+import pickle
+import os
+import matplotlib.pyplot as plt
+
 
 class Trajectory:
     """ Trajectory modeling with CVAE
@@ -10,64 +16,57 @@ class Trajectory:
     be used to make predictions.
     """
 
-    def __init__(self, config):
-        pass
+    def __init__(self, encoder, decoder, normalizer=None, samples=30, z_size=16, 
+            length=200, deltaT=1.0/180.0, default_Sigma_y=1e2):
+        self.encoder = encoder
+        self.decoder = decoder
+        self.normalizer = normalizer
+        self.deltaT = deltaT
+        self.length = length
+        self.z_size = z_size
+        self.samples = samples
+        self.default_Sigma_y = default_Sigma_y
 
     def traj_llh(self, times, obs):
-        pass
+        #TODO: Not implemented yet, think well the math first
+        #X, Xobs = utils.encode_fixed_dt([times],[obs], self.length,self.deltaT)
+        return 0.0
 
     def traj_dist(self, prev_times, prev_obs, pred_times):
-        pass
+        batch_size = 1
+        #1) First normalize and then encode. Very important!
+        Xn, Xobs = utils.encode_fixed_dt([prev_times],[self.normalizer.transform(prev_obs)], 
+                self.length, self.deltaT)
+        z = np.random.normal(loc=0.0, scale=1.0, size=(self.samples,batch_size,self.z_size))
+        y_n = np.array([self.decoder.predict([Xn,Xobs,z[i]]) for i in range(self.samples)])
+        y = utils.apply_scaler(self.normalizer.inverse_transform, y_n)
+        ixs = [int(round((x - prev_times[0])/self.deltaT)) for x in pred_times]
+        means = [] 
+        covs = []
+        for i in ixs:
+            if i < self.length:
+                y_mu = np.mean(y[:,0,i,:], axis=0)
+                y_Sigma = np.cov(y[:,0,i,:], rowvar=False)
+            else:
+                y_mu = np.mean(y[:,0,-1,:], axis=0)
+                y_Sigma = self.default_Sigma_y*np.eye(y.shape[-1])
+            means.append(y_mu)
+            covs.append(y_Sigma)
+        return np.array(means), np.array(covs)
 
-class TSAug(keras.utils.Sequence):
-    """ Augments the data for time series modeling
+def load_traj_cvae(path):
+    """ Loads trained trajectory CVAE
     """
+    extra = json.load( open(os.path.join(path,'conf.json'), 'r') )
+    extra.setdefault('deltaT', 1.0/180.0)
+    extra.setdefault('samples', 30)
+    extra.setdefault('default_Sigma_y', 1e2)
+    decoder = keras.models.load_model( os.path.join(path,'decoder.h5') )
+    encoder = keras.models.load_model( os.path.join(path,'encoder.h5') )
+    norm = pickle.load(open(os.path.join(path,'norm.pickle'), 'rb'))
+    return Trajectory(encoder, decoder, norm['xscaler'], samples=extra['samples'], 
+            z_size=extra['z_size'], length=extra['in_size'], 
+            deltaT=extra['deltaT'], 
+            default_Sigma_y=extra['default_Sigma_y'])
 
-    def __init__(self, X, Xobs, batch_size=32, ds_mult=16, shuffle=True):
-        self.X = X
-        self.Xobs = Xobs
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-        self.ds_mult = ds_mult
-        self.on_epoch_end()
-
-    def on_epoch_end(self):
-        self.indexes = np.repeat(np.arange(len(self.X)), self.ds_mult)
-        if self.shuffle:
-            np.random.shuffle(self.indexes)
-
-    def __data_generation(self, list_ids):
-        Y = self.X[list_ids]
-        Yobs = self.Xobs[list_ids]
-        
-        N,T,K = Y.shape        
-        ts_lens = np.random.randint(low=0, high=T, size=N)
-        is_obs = np.array([np.arange(T) < x for x in ts_lens])
-        Xobs = Yobs*is_obs.reshape((self.batch_size,T,1))
-        X = Xobs*Y
-
-        return X, Xobs, Y, Yobs
-
-    def __len__(self):
-        x = np.floor(len(self.indexes) / self.batch_size)
-        return int(x)
-
-    def __getitem__(self, index):
-        list_ids = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
-        X, Xobs, Y, Yobs = self.__data_generation(list_ids)
-        Ymask = np.concatenate((Y,Yobs),axis=-1)
-        return [X,Xobs,Y], [Ymask]
-
-def cvae_loss(mu, log_sigma, batch_size):
-    def loss(y_mask, y_decoded_mean):
-        y = y_mask[:,:,0:-1]
-        mask = y_mask[:,:,-1]
-        d = y - y_decoded_mean
-        d_sq = keras.backend.sum( keras.backend.square(d), axis=-1 )
-        d_sq_masked = d_sq * mask
-        kl = 0.5 * keras.backend.sum(keras.backend.exp(log_sigma) + 
-                keras.backend.square(mu) - 1. - log_sigma)
-        rec_loss = keras.backend.sum( d_sq_masked )
-        return (rec_loss + kl) / batch_size
-    return loss
 
