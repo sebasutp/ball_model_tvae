@@ -3,6 +3,7 @@ import traj_pred.trajectory as traj
 import traj_pred.utils as utils
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 import zmq
 import slpp_pb2
 import argparse
@@ -25,16 +26,23 @@ def main(args):
     res = slpp_pb2.BallPredictResponse()
     while True:
         msg = skt.recv()
+        t0 = time.time()
         req.ParseFromString(msg)
         prev_times = pbtensor2numpy(req.prev_times)
         prev_obs = pbtensor2numpy(req.prev_obs)
         pred_times = pbtensor2numpy(req.pred_times)
+        t1 = time.time()
 
         pred_mean, pred_cov = pred.traj_dist(prev_times, prev_obs, pred_times)
+
+        t2 = time.time()
         numpy2pbtensor(res.means, pred_mean)
         numpy2pbtensor(res.covs, pred_cov)
         msg = res.SerializeToString()
+        t3 = time.time()
         skt.send(msg)
+        print("Responding request. Decoding: {} ms, Computing: {} ms, Encoding: {} ms, Total: {} ms".format(
+            1000*(t1-t0), 1000*(t2-t1), 1000*(t3-t2), 1000*(t3-t0)))
 
 
 if __name__ == "__main__":
