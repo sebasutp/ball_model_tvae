@@ -47,6 +47,8 @@ class Trajectory:
             if i < self.length:
                 y_mu = np.mean(y[:,0,i,:], axis=0)
                 y_Sigma = np.cov(y[:,0,i,:], rowvar=False)
+                bias_scale = self.samples/(self.samples-1)
+                y_Sigma = bias_scale*y_Sigma
             else:
                 y_mu = np.mean(y[:,0,-1,:], axis=0)
                 y_Sigma = self.default_Sigma_y*np.eye(y.shape[-1])
