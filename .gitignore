@@ -4,3 +4,4 @@ traj_pred.egg-info
 *.pyc
 data/
 models/
+results/

@@ -14,7 +14,10 @@ def encode_fixed_dt(Times, Xreal, length, deltaT=1.0/180.0):
 
     N = len(Times)
     assert(N>0 and len(Xreal) == N)
-    D = len(Xreal[0][0])
+    if len(Xreal[0].shape) == 1:
+        D = 1
+    else:
+        D = len(Xreal[0][0])
 
     X = np.zeros((N,length,D))
     Xobs = np.zeros((N,length,1))
