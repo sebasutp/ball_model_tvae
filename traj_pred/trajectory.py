@@ -1,5 +1,5 @@
 
-import traj_pred.cvae as cvae
+import traj_pred.dcgm as dcgm
 import numpy as np
 import os
 import json
@@ -7,7 +7,7 @@ import scipy.stats as stats
 import traj_pred.utils as utils
 import time
 
-traj_loaders = {'cvae': cvae.load_traj_cvae}
+traj_loaders = {'dcgm': dcgm.load_traj_model}
 
 def load_model(path):
     conf = json.load( open(os.path.join(path,'conf.json'), 'r') )
