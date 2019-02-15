@@ -17,8 +17,9 @@ class Trajectory:
     """
 
     def __init__(self, encoder, decoder, normalizer=None, samples=30, z_size=16, 
-            length=200, deltaT=1.0/180.0, default_Sigma_y=1e2):
+            length=200, deltaT=1.0/180.0, default_Sigma_y=1e2, partial_encoder=None):
         self.encoder = encoder
+        self.partial_encoder = partial_encoder
         self.decoder = decoder
         self.normalizer = normalizer
         self.deltaT = deltaT
@@ -26,6 +27,24 @@ class Trajectory:
         self.z_size = z_size
         self.samples = samples
         self.default_Sigma_y = default_Sigma_y
+
+    def save(self, path):
+        """ Saves to the file passed as argument
+        """
+        extra = {'model': 'dcgm',
+                'deltaT': self.deltaT, 
+                'samples': self.samples, 
+                'default_Sigma_y': self.default_Sigma_y,
+                'z_size': self.z_size,
+                'length': self.length}
+        if not os.path.exists(path):
+            os.makedirs(path)
+        self.encoder.save(os.path.join(path, 'encoder.h5'))
+        self.decoder.save(os.path.join(path, 'decoder.h5'))
+        if self.partial_encoder is not None:
+            self.partial_encoder.save(os.path.join(path, 'partial_encoder.h5'))
+        pickle.dump({'xscaler': self.normalizer}, open(os.path.join(path, 'norm.pickle'),'wb'))
+        json.dump(extra, open(os.path.join(path, 'conf.json'), 'w'))
 
     def traj_llh(self, times, obs):
         #TODO: Not implemented yet, think well the math first
@@ -38,6 +57,10 @@ class Trajectory:
         Xn, Xobs = utils.encode_fixed_dt([prev_times],[self.normalizer.transform(prev_obs)], 
                 self.length, self.deltaT)
         z = np.random.normal(loc=0.0, scale=1.0, size=(self.samples,batch_size,self.z_size))
+        if self.partial_encoder is not None:
+            mu_z, log_sig_z = self.partial_encoder.predict([Xn, Xobs])
+            sig_z = np.sqrt( np.exp(log_sig_z) )
+            z = mu_z + z*sig_z
         y_n = np.array([self.decoder.predict([Xn,Xobs,z[i]]) for i in range(self.samples)])
         y = utils.apply_scaler(self.normalizer.inverse_transform, y_n)
         ixs = [int(round((x - prev_times[0])/self.deltaT)) for x in pred_times]
@@ -65,11 +88,17 @@ def load_traj_model(path):
     extra.setdefault('default_Sigma_y', 1e2)
     decoder = keras.models.load_model( os.path.join(path,'decoder.h5') )
     encoder = keras.models.load_model( os.path.join(path,'encoder.h5') )
+    penc_fn = os.path.join(path,'partial_encoder.h5')
+    if os.path.exists(penc_fn):
+        partial_encoder = keras.models.load_model(penc_fn)
+    else:
+        partial_encoder = None
     norm = pickle.load(open(os.path.join(path,'norm.pickle'), 'rb'))
     return Trajectory(encoder, decoder, norm['xscaler'], samples=extra['samples'], 
-            z_size=extra['z_size'], length=extra['in_size'], 
+            z_size=extra['z_size'], length=extra['length'], 
             deltaT=extra['deltaT'], 
-            default_Sigma_y=extra['default_Sigma_y'])
+            default_Sigma_y=extra['default_Sigma_y'],
+            partial_encoder=partial_encoder)
 
 
 class BatchDCGM(keras.utils.Sequence):
@@ -95,7 +124,7 @@ class BatchDCGM(keras.utils.Sequence):
         N,T,K = Y.shape        
         ts_lens = np.random.randint(low=0, high=T, size=N)
         is_obs = np.array([np.arange(T) < x for x in ts_lens])
-        Xobs = Yobs*is_obs.reshape((self.batch_size,T,1))
+        Xobs = Yobs*is_obs.reshape((-1,T,1))
         X = Xobs*Y
 
         return X, Xobs, Y, Yobs
@@ -107,14 +136,16 @@ class BatchDCGM(keras.utils.Sequence):
         times, X = self.batch_sampler[index]
         X, Xobs, Y, Yobs = self.__data_generation(times, X)
         Ymask = np.concatenate((Y,Yobs),axis=-1)
-        return [X,Xobs,Y], [Ymask]
+        return [X,Xobs,Y,Yobs], [Ymask]
 
-def dcgm_loss(mu, log_sigma, log_sig_y):
+def dcgm_loss(mu_z_c, log_sig_z_c, mu_z_p, log_sig_z_p, log_sig_y):
     def loss(y_mask, y_decoded_mean):
         y_mask_shape = keras.backend.shape(y_mask)
         batch_size = y_mask_shape[0]
         y = y_mask[:,:,0:-1]
         mask = y_mask[:,:,-1]
+
+        # Compute Exp Likelihood
         sig_y = keras.backend.exp(log_sig_y)
         d = y - y_decoded_mean
         d_sq = keras.backend.square(d)
@@ -122,58 +153,69 @@ def dcgm_loss(mu, log_sigma, log_sig_y):
         log_det_sig_y = keras.backend.sum(log_sig_y) #has to be a scalar
         d_mah_sum = keras.backend.sum(d_mah, axis=-1 ) + log_det_sig_y
         d_sq_masked = d_mah_sum * mask
-        kl = 0.5 * keras.backend.sum(keras.backend.exp(log_sigma) + 
-                keras.backend.square(mu) - 1. - log_sigma)
+
+        # Compute KL divergence
+        sig_z = keras.backend.exp(log_sig_z_c)
+        sig_z_p = keras.backend.exp(log_sig_z_p)
+        g_dist = (sig_z + keras.backend.square(mu_z_c - mu_z_p))/sig_z_p
+        kl_terms = log_sig_z_p - log_sig_z_c + g_dist - 1
+        kl = 0.5 * keras.backend.sum(kl_terms)
         rec_loss = 0.5 * keras.backend.sum( d_sq_masked )
-        return (rec_loss + kl) / tf.to_float(batch_size)
+        tot_loss = rec_loss + kl
+        return tot_loss / tf.to_float(batch_size)
     return loss
 
 class TrajDCGM:
     """ A deep conditional generative model for trajectory generation
     """
 
-    def __build_graph(self, encoder, cond_generator, log_sig_y, length, D, z_size):
+    def __build_graph(self, encoder, partial_encoder, cond_generator, 
+            log_sig_y, length, D, z_size):
         self.encoder = encoder
+        self.partial_encoder = partial_encoder
         self.cond_generator = cond_generator
-        x = keras.layers.Input(shape=(length,D))
-        x_obs = keras.layers.Input(shape=(length,1))
-        y = keras.layers.Input(shape=(length,D))
-        y_obs = keras.layers.Input(shape=(length,1))
+        self.log_sig_y = log_sig_y
+        x = keras.layers.Input(shape=(length,D), name='x_in')
+        x_obs = keras.layers.Input(shape=(length,1), name='x_obs_in')
+        y = keras.layers.Input(shape=(length,D), name='y_in')
+        y_obs = keras.layers.Input(shape=(length,1), name='y_obs_in')
         
         #self.z_in = keras.layers.Input(shape=(z_size,))
         mu_z, log_sig_z = encoder([y,y_obs])
+        mu_z_partial, log_sig_z_partial = partial_encoder([x,x_obs])
 
         def sampling(args):
             z_mean, z_log_sigma = args
-            epsilon = keras.backend.random_normal(shape=(batch_size, z_size))
-            return z_mean + tf.exp(z_log_sigma) * epsilon
+            epsilon = keras.backend.random_normal(shape=keras.backend.shape(z_mean))
+            return z_mean + tf.sqrt(tf.exp(z_log_sigma)) * epsilon
 
         z_sampler = keras.layers.Lambda(sampling, output_shape=(z_size,))
         z = z_sampler([mu_z, log_sig_z])
         y_pred = cond_generator([x,x_obs,z])
 
         self.full_tree = keras.models.Model(inputs=[x,x_obs,y,y_obs], outputs=[y_pred])
-        my_loss = dcgm_loss(mu_z, log_sig_z, log_sig_y)
+        my_loss = dcgm_loss(mu_z, log_sig_z, mu_z_partial, log_sig_z_partial, log_sig_y)
         self.full_tree.compile(optimizer='adam', loss=my_loss)
 
     def fit_generator(self, generator, validation_data, epochs, use_multiprocessing, workers, callbacks):
         self.full_tree.fit_generator(generator=generator, validation_data=validation_data, epochs=epochs,
                 use_multiprocessing=use_multiprocessing, workers=workers, callbacks=callbacks)
 
-    def __init__(self, encoder, cond_generator, log_sig_y, length, D, z_size):
+    def __init__(self, encoder, partial_encoder, cond_generator, log_sig_y, length, D, z_size):
         """ Constructs a Trajectory Deep Conditional Model
 
         Parameters
         ----------
 
         encoder : Model with inputs=[y,y_obs] and outputs=[mu_z, log_sig_z]
+        partial_encoder : Model with inputs=[x,x_obs] and outputs=[mu_z, log_sig_z]
         cond_generator : Model with inputs=[x,x_obs,z] and output=[y]
         log_sig_y : Variable representing the sensor noise. If it is trainable, it will be optimized.
         length : Maximum number of time samples of each trajectory
         D : Dimensionality of the observations
         z_size : Dimensionality of the hidden state
         """
-        self.__build_graph(encoder, cond_generator, log_sig_y, length, D, z_size)
+        self.__build_graph(encoder, partial_encoder, cond_generator, log_sig_y, length, D, z_size)
 
 
 

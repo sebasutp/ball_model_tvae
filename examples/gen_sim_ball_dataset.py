@@ -63,7 +63,7 @@ def main(args):
             bounce_fac=args.bounce_fac, quad_air_drag=args.air_drag, deltaT=args.dt)
     noisyX = X + np.random.normal(loc=0, scale=args.noise, size=X.shape)
     with open(args.data,'wb') as f:
-        np.savez(f, Times=times, X=X, Xd=Xd, noisyX=noisyX, is_bounce=is_bounce, 
+        np.savez(f, Times=times, X=noisyX, Xd=Xd, Xsim=X, is_bounce=is_bounce, 
             bounce_times=bounce_times)
         print("{} trajectories saved to file".format(len(times)))
 
