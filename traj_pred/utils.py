@@ -14,11 +14,24 @@ def transform_ball_traj(x, rotation_range, translation_range):
     trans = np.random.uniform(low=translation_range[0], high=translation_range[1])
     th = rot*math.acos(-1)/180.0
 
-    center = x[0]
+    center = x[len(x) // 2]
     #print("Center: {}, Theta: {}, Trans: {}".format(center,th,trans))
     xt = rotate_z(x, th, center) + trans
     #print(xt)
     return xt
+
+def shift_time(Times, X, length):
+    nTimes = []
+    nX = []
+    for i, t in enumerate(Times):
+        offset = len(t) - length
+        if offset > 0:
+            start_ix = np.random.randint(low=0, high=offset)
+        else:
+            start_ix = 0
+        nTimes.append(t[start_ix:])
+        nX.append(X[i][start_ix:])
+    return nTimes, nX
 
 def encode_fixed_dt(Times, Xreal, length, deltaT=1.0/180.0):
     """ Encode time series as with fixed time and missing observations
