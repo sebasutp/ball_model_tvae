@@ -2,6 +2,23 @@
 import numpy as np
 import keras
 import sklearn.preprocessing as prep
+import math
+
+def rotate_z(x, th, center):
+    rm = np.array([[math.cos(th), -math.sin(th), 0],[math.sin(th), math.cos(th),0],[0,0,1]])
+    xt = [np.dot(rm, (y - center)) + center for y in x]
+    return np.array(xt)
+
+def transform_ball_traj(x, rotation_range, translation_range):
+    rot = np.random.uniform(low=rotation_range[0], high=rotation_range[1])
+    trans = np.random.uniform(low=translation_range[0], high=translation_range[1])
+    th = rot*math.acos(-1)/180.0
+
+    center = x[0]
+    #print("Center: {}, Theta: {}, Trans: {}".format(center,th,trans))
+    xt = rotate_z(x, th, center) + trans
+    #print(xt)
+    return xt
 
 def encode_fixed_dt(Times, Xreal, length, deltaT=1.0/180.0):
     """ Encode time series as with fixed time and missing observations

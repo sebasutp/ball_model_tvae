@@ -56,7 +56,7 @@ def create_cond_gen(length, D, z_size):
 
 def train_ball_dcgm(X, Times, Xval, Time_v, length, deltaT, z_size=64, batch_size=64, epochs=100):
     x_scaler = utils.train_std_scaler(X)
-    x_transform = lambda x: x_scaler.transform(x)
+    x_transform = lambda x: x_scaler.transform( utils.transform_ball_traj(x,(-30,30),((-0.3,-0.3,0.0),(0.3,0.3,0.0))) )
     epoch_size = 4000
     N = len(X)
     D = len(X[0][0])
@@ -80,7 +80,7 @@ def train_ball_dcgm(X, Times, Xval, Time_v, length, deltaT, z_size=64, batch_siz
     
     reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.8, patience=10, verbose=1, min_lr=1e-7)
     callback_list = [reduce_lr]
-    model.fit_generator(dcgm_mb, dcgm_mb_val, epochs=epochs, use_multiprocessing=True, workers=2,
+    model.fit_generator(dcgm_mb, dcgm_mb_val, epochs=epochs, use_multiprocessing=True, workers=8,
             callbacks=callback_list)
     print("Finishing training")
 
@@ -108,9 +108,9 @@ def main(args):
     t_pred.save(args.model)
     print("Model saved")
 
-    #np_l_sy = keras.backend.eval(log_sig_y)
-    #noise_y = np.exp(np_l_sy)
-    #print(noise_y)
+    np_l_sy = keras.backend.eval(log_sig_y)
+    noise_y = np.exp(np_l_sy)
+    print(noise_y)
     
 
 if __name__ == "__main__":
