@@ -79,6 +79,11 @@ def cov_to_std(covs):
     std = np.sqrt(var)
     return std
 
+def empirical_traj_dist(samples):
+    """ Creates a mean and cov array for the Gaussian trajectory distribution
+    """
+    pass
+
 def apply_scaler(f, tensor):
     """ Apply the scaler function to the tensor
     """
