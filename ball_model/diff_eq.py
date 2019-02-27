@@ -43,8 +43,13 @@ class BallTrajectory:
             #N = len(prev_times)
             prev_times = prev_times[:self.filter_window]
             prev_obs = prev_obs[:self.filter_window]
-        pt = prev_times - prev_times[0]
+        t0 = prev_times[0]
+        pt = prev_times - t0
         init_state_dist = self.init_state_dist.fit(pt, prev_obs)
         states = init_state_dist.sample(self.n_samples)
+        samples = np.array([self.get_traj_sample(s, 0.0, pred_times - t0) for s in states])
+        means = np.mean(samples, axis=0)
+        stds = np.std(samples, axis=0)
+        
 
 
