@@ -149,7 +149,7 @@ def dcgm_loss(mu_z_c, log_sig_z_c, mu_z_p, log_sig_z_p, log_sig_y):
         sig_y = keras.backend.exp(log_sig_y)
         d = y - y_decoded_mean
         d_sq = keras.backend.square(d)
-        d_mah = tf.math.divide(d_sq, sig_y)
+        d_mah = tf.divide(d_sq, sig_y)
         log_det_sig_y = keras.backend.sum(log_sig_y) #has to be a scalar
         d_mah_sum = keras.backend.sum(d_mah, axis=-1 ) + log_det_sig_y
         d_sq_masked = d_mah_sum * mask
