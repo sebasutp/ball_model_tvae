@@ -119,7 +119,8 @@ class BatchDCGM(keras.utils.Sequence):
 
     def __data_generation(self, times, X):
         assert( len(times) == len(X) )
-        Y, Yobs = utils.encode_fixed_dt(times, X, self.length, self.deltaT)
+        n_times, n_x = utils.shift_time(times, X, self.length)
+        Y, Yobs = utils.encode_fixed_dt(n_times, n_x, self.length, self.deltaT)
        
         N,T,K = Y.shape        
         ts_lens = np.random.randint(low=0, high=T, size=N)

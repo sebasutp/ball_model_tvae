@@ -56,7 +56,7 @@ def create_cond_gen(length, D, z_size):
 
 def train_ball_dcgm(X, Times, Xval, Time_v, length, deltaT, z_size=64, batch_size=64, epochs=100):
     x_scaler = utils.train_std_scaler(X)
-    x_transform = lambda x: x_scaler.transform(x)
+    x_transform = lambda x: x_scaler.transform( utils.transform_ball_traj(x,(-30,30),((-0.3,-0.3,0.0),(0.3,0.3,0.0))) )
     epoch_size = 4000
     N = len(X)
     D = len(X[0][0])
@@ -78,9 +78,11 @@ def train_ball_dcgm(X, Times, Xval, Time_v, length, deltaT, z_size=64, batch_siz
     log_sig_y = log_sig_y_trainable
     model = dcgm.TrajDCGM(encoder=encoder, partial_encoder=partial_encoder, cond_generator=cond_generator, log_sig_y=log_sig_y, length=length, D=D, z_size=z_size)
     
-    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.8, patience=10, verbose=1, min_lr=1e-7)
-    callback_list = [reduce_lr]
-    model.fit_generator(dcgm_mb, dcgm_mb_val, epochs=epochs, use_multiprocessing=True, workers=2,
+    reduce_lr = keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.8, patience=5, verbose=1, min_lr=1e-7)
+    early_st = keras.callbacks.EarlyStopping(monitor='val_loss', min_delta=0.0001, verbose=1, patience=10, mode='auto')
+    #model_cp = keras.callbacks.ModelCheckpoint("/tmp/weights-{epoch:02d}.h5", monitor='val_loss', save_best_only=True, save_weights_only=True, mode="auto")
+    callback_list = [reduce_lr, early_st]
+    model.fit_generator(dcgm_mb, dcgm_mb_val, epochs=epochs, use_multiprocessing=True, workers=8,
             callbacks=callback_list)
     print("Finishing training")
 
@@ -103,14 +105,14 @@ def main(args):
     Xval = X[ntrain:]
     Time_val = Times[ntrain:]
 
-    model, t_pred, log_sig_y = train_ball_dcgm(Xt, Time_t, Xval, Time_val, length=200, deltaT=1.0/180.0, batch_size=args.batch_size, epochs=args.epochs)
+    model, t_pred, log_sig_y = train_ball_dcgm(Xt, Time_t, Xval, Time_val, length=args.length, deltaT=1.0/180.0, batch_size=args.batch_size, epochs=args.epochs)
     print("Model trained")
     t_pred.save(args.model)
     print("Model saved")
 
-    #np_l_sy = keras.backend.eval(log_sig_y)
-    #noise_y = np.exp(np_l_sy)
-    #print(noise_y)
+    np_l_sy = keras.backend.eval(log_sig_y)
+    noise_y = np.exp(np_l_sy)
+    print(noise_y)
     
 
 if __name__ == "__main__":
@@ -118,7 +120,6 @@ if __name__ == "__main__":
     parser.add_argument('training_data', help="File with the stored training trajectories")
     parser.add_argument('model', help="Path where the resulting model is saved")
     parser.add_argument('--p', type=float, default=0.1, help="Percentage of the trajectories used for validation")
-    parser.add_argument('--out_fmt', default='split{}.npz', help="File where the processed data is saved")
     parser.add_argument('--epochs', type=int, default=100, help="Number of training epochs")
     parser.add_argument('--dt', type=float, default=1.0/180.0, help="Delta Time")
     parser.add_argument('--length', type=int, default=200, help="Length of the time series to model")
