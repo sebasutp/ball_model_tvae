@@ -80,9 +80,20 @@ def cov_to_std(covs):
     return std
 
 def empirical_traj_dist(samples):
-    """ Creates a mean and cov array for the Gaussian trajectory distribution
+    """ Creates a mean and cov array for the Gaussian trajectory distribution from traj samples
+
+    samples : A (N,T,D) array with N samples, T measurements per time series, and D dimensions 
+    per observation
+
+    returns a (T,D) mean array and (T,D,D) covariance array
     """
-    pass
+    means = np.mean(samples, axis=0)
+    diff = samples - means
+    covs = np.matmul(
+            np.transpose(diff, (1, 2, 0)),
+            np.transpose(diff, (1, 0, 2))
+            ) / len(samples)
+    return means, covs
 
 def apply_scaler(f, tensor):
     """ Apply the scaler function to the tensor
@@ -132,3 +143,27 @@ class TrajMiniBatch(keras.utils.Sequence):
         X = [self.x_transform(self.X[i]) for i in list_ids]
         Times = [self.t_transform(self.Times[i]) for i in list_ids]
         return (Times, X)
+
+class BayesianLinearReg:
+    """ Linear regression with Gaussian Distributed weights
+    """
+
+    def __init__(self, init_mean, init_cov, noise):
+        self.mean = init_mean
+        self.cov = init_cov
+        self.noise = noise
+        self.n_features = len(init_mean)
+
+    def fit(self, Phi, y):
+        """ Fit weights so Phi*w = y
+        """
+        inv_Sw = np.linalg.inv(self.cov)
+        Sig_w = np.linalg.inv(inv_Sw + np.dot(Phi.T, Phi)/self.noise**2 )
+        mu_w = np.dot( Sig_w, (
+            np.dot(Phi.T,y)/self.noise**2 + np.dot(inv_Sw, self.mean)
+            ))
+        self.mean = mu_w
+        self.cov = Sig_w
+
+    def get_params(self):
+        return {'mean': self.mean, 'cov': self.cov, 'noise': self.noise}
