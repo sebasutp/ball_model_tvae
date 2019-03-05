@@ -1,5 +1,6 @@
 
 import traj_pred.dcgm as dcgm
+import traj_pred.lstm
 import traj_pred.ball_model.diff_eq as ball_deq
 import numpy as np
 import os
@@ -8,7 +9,9 @@ import scipy.stats as stats
 import traj_pred.utils as utils
 import time
 
-traj_loaders = {'dcgm': dcgm.load_traj_model, "ball/diff_eq": ball_deq.load_traj_model}
+traj_loaders = {'dcgm': dcgm.load_traj_model, 
+        "lstm": traj_pred.lstm.load_traj_model, 
+        "ball/diff_eq": ball_deq.load_traj_model}
 
 def load_model(path):
     conf = json.load( open(os.path.join(path,'conf.json'), 'r') )
