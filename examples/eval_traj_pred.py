@@ -6,6 +6,12 @@ import matplotlib.pyplot as plt
 
 import argparse
 
+def flatten_list(L):
+    ans = []
+    for l in L:
+        ans.extend(l)
+    return ans
+
 def main(args):
     with open(args.data,'rb') as f:
         data = np.load(f, encoding='latin1')
@@ -15,8 +21,8 @@ def main(args):
     Times = [t - t[0] for t in Times]
     pred = traj.load_model(args.model)
     m = traj.traj_pred_error(pred, Times[0:N], X[0:N], nobs=args.nobs, noise=args.noise)
-    m['avg_err'] = np.mean(m['distances'])
-    m['avg_mlh'] = np.mean(m['c_marg'])
+    m['avg_err'] = np.mean( flatten_list(m['distances']) )
+    m['avg_mlh'] = np.mean( flatten_list(m['c_marg']) )
     mean_dist, std_dist = traj.comp_traj_dist(Times[0:N], m['distances'], length=args.length, deltaT=args.dt)
     mean_llh, std_llh = traj.comp_traj_dist(Times[0:N], m['c_marg'], length=args.length, deltaT=args.dt)
     m['mean_dist'] = mean_dist.reshape(-1)

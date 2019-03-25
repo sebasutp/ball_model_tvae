@@ -17,12 +17,34 @@ import keras
 def create_lstm(length, D, hidden_size):
     y = keras.layers.Input(shape=(length-1,D), name='y_input')
     y_obs = keras.layers.Input(shape=(length-1,1), name='y_obs_input')
+    noise = keras.layers.Input(shape=(length-1,D), name='y_noise')
     
     y_conc = keras.layers.concatenate([y, y_obs])
-    rnn = keras.models.Sequential()
-    rnn.add( keras.layers.LSTM(hidden_size, input_shape=(length,D+1), return_sequences=True) )
-    rnn.add( keras.layers.TimeDistributed(keras.layers.Dense(D)) )
-    out = rnn(y_conc)
+    my_lstm = keras.layers.LSTM(hidden_size, input_shape=(D+1,), return_sequences=True, return_state=True)
+    my_dense = keras.layers.Dense(D, input_shape=(hidden_size,))
+
+    lstm_out, lstm_state_h, lstm_state_c = my_lstm(y_conc)
+    td_layer = keras.layers.TimeDistributed(my_dense, input_shape=(length,hidden_size))
+    out = td_layer(lstm_out)
+
+    # Test time model
+    '''
+    lstm_out_test = []
+    for i in range(length-1):
+        if i == 0:
+            lstm_out_i, lstm_state_h_i, lstm_state_c_i = my_lstm(y_conc[i:i+1,:])
+        else:
+            lstm_out_i, lstm_state_h_i, lstm_state_c_i = my_lstm(y_conc[i:i+1,:], 
+                    initial_state=[lstm_state_h_i, lstm_state_c_i])
+        lstm_out_test.append(my_dense(lstm_out_i[0]))
+    test_model = keras.models.Model(inputs=[y,y_obs,noise], outputs=[lstm_out_test])
+    '''
+
+
+    #rnn = keras.models.Sequential()
+    #rnn.add( my_lstm )
+    #rnn.add( keras.layers.TimeDistributed(keras.layers.Dense(D)) )
+    #out = rnn(y_conc)
 
     return keras.models.Model(inputs=[y,y_obs], outputs=[out])
 
