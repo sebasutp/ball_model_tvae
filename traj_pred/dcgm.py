@@ -108,10 +108,12 @@ class BatchDCGM(keras.utils.Sequence):
     of tensors (X,Xobs,Y,Yobs) with the same time length and deltaT.
     """
 
-    def __init__(self, batch_sampler, length, deltaT):
+    def __init__(self, batch_sampler, length, deltaT, fake_missing_p=0.0):
         self.batch_sampler = batch_sampler
         self.length = length
         self.deltaT = deltaT
+        self.duration = length*deltaT
+        self.fake_missing_p = fake_missing_p
         self.on_epoch_end()
 
     def on_epoch_end(self):
@@ -119,12 +121,12 @@ class BatchDCGM(keras.utils.Sequence):
 
     def __data_generation(self, times, X):
         assert( len(times) == len(X) )
-        n_times, n_x = utils.shift_time(times, X, self.length)
+        n_times, n_x = utils.shift_time_duration(times, X, self.duration) # arbitrary start point
         Y, Yobs = utils.encode_fixed_dt(n_times, n_x, self.length, self.deltaT)
        
         N,T,K = Y.shape        
         ts_lens = np.random.randint(low=0, high=T, size=N)
-        is_obs = np.array([np.arange(T) < x for x in ts_lens])
+        is_obs = np.array([np.logical_and(np.arange(T) < x, np.random.rand(T)>=self.fake_missing_p) for x in ts_lens])
         Xobs = Yobs*is_obs.reshape((-1,T,1))
         X = Xobs*Y
 

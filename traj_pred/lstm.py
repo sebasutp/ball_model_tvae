@@ -7,6 +7,7 @@ import json
 import pickle
 import os
 import matplotlib.pyplot as plt
+import time
 
 class BatchLSTM(keras.utils.Sequence):
     """ Creates mini-batches for an LSTM for trajectories
@@ -77,42 +78,54 @@ class TrajectoryLSTM:
         self.default_Sigma_y = default_Sigma_y
         self.Sigma_y = Sigma_y
 
-    def traj_dist(self, prev_times, prev_obs, pred_times):
+    def traj_dist(self, prev_times, prev_obs, pred_times, recursive=True):
         batch_size = 1
         D = prev_obs[0].shape[-1]
         #1) First normalize and then encode. Very important!
         curr_ix = int( round((prev_times[-1]-prev_times[0]) / self.deltaT) )
-        #print(Xobs)
-        #print(curr_ix)
-        y = []
+        t1 = time.time()
+        pred_time = 0.0
+
         Sigma_y = self.Sigma_y if self.Sigma_y is not None else 0.01*np.eye(D)
-        for n in range(self.samples):
-            Xn, Xobs = utils.encode_fixed_dt([prev_times],[self.normalizer.transform(prev_obs)], 
-                self.length-1, self.deltaT)
+        noise = np.random.multivariate_normal(mean=np.zeros(D), cov=Sigma_y, size=(self.samples,self.length-1))
+        Xn, Xobs = utils.encode_fixed_dt([prev_times],[self.normalizer.transform(prev_obs)], 
+            self.length-1, self.deltaT)
+        if recursive:
+            Xsamples = np.repeat(Xn, repeats=self.samples, axis=0)
+            Xobs_samples = np.repeat(Xobs, repeats=self.samples, axis=0)
+            y_n = None
             for i in range(curr_ix, self.length-1):
-                y_n = self.model.predict([Xn,Xobs]) + np.random.multivariate_normal(mean=np.zeros(D), cov=Sigma_y, size=self.length-1)
+                t2 = time.time()
+                y_n = self.model.predict([Xsamples,Xobs_samples]) + noise
+                t3 = time.time()
+                pred_time += t3-t2
                 if i+1 < self.length-1:
-                    #print(i,Xobs[0][i], Xobs[0][i+1])
-                    assert(abs(Xobs[0][i]-1.0) < 1e-6 and abs(Xobs[0][i+1]) < 1e-6)
-                    Xn[0][i+1] = y_n[0][i]
-                    Xobs[0][i+1] = 1.0
-            y.append( utils.apply_scaler(self.normalizer.inverse_transform, y_n) )
-        y = np.array(y)
+                    Xsamples[:,i+1] = y_n[:,i]
+                    Xobs_samples[:,i+1] = 1.0
+            if y_n is None:
+                y_n = self.model.predict([Xsamples,Xobs_samples]) + noise
+            y = utils.apply_scaler(self.normalizer.inverse_transform, y_n)
+        else:
+            y_n = self.model.predict([Xn, Xobs]) + noise
+            y = utils.apply_scaler(self.normalizer.inverse_transform, y_n)
 
         ixs = [int(round((x - prev_times[0])/self.deltaT))-1 for x in pred_times]
         means = [] 
         covs = []
         for i in ixs:
             if i < self.length-1:
-                y_mu = np.mean(y[:,0,i,:], axis=0)
-                y_Sigma = np.cov(y[:,0,i,:], rowvar=False)
+                y_mu = np.mean(y[:,i,:], axis=0)
+                y_Sigma = np.cov(y[:,i,:], rowvar=False)
                 bias_scale = self.samples/(self.samples-1)
                 y_Sigma = bias_scale*y_Sigma
             else:
-                y_mu = np.mean(y[:,0,-1,:], axis=0)
+                y_mu = np.mean(y[:,-1,:], axis=0)
                 y_Sigma = self.default_Sigma_y*np.eye(y.shape[-1])
             means.append(y_mu)
             covs.append(y_Sigma)
+        t4 = time.time()
+        print("Total pred time: {}, Computing the LSTM prediction: {}, Avg. LSTM pred: {}".format(
+            t4-t1, pred_time, pred_time / (self.length-curr_ix-1)))
         return np.array(means), np.array(covs)
 
 

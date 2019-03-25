@@ -56,7 +56,7 @@ def create_cond_gen(length, D, z_size):
 
 def train_ball_dcgm(X, Times, Xval, Time_v, length, deltaT, z_size=64, batch_size=64, epochs=100):
     x_scaler = utils.train_std_scaler(X)
-    x_transform = lambda x: x_scaler.transform( utils.transform_ball_traj(x,(-30,30),((-0.3,-0.3,0.0),(0.3,0.3,0.0))) )
+    x_transform = lambda x: x_scaler.transform( utils.transform_ball_traj(x,(-45,45),((-0.6,-0.8,0.0),(0.6,0.8,0.0))) )
     epoch_size = 4000
     N = len(X)
     D = len(X[0][0])
@@ -64,11 +64,11 @@ def train_ball_dcgm(X, Times, Xval, Time_v, length, deltaT, z_size=64, batch_siz
 
     my_mb = utils.TrajMiniBatch(Times, X, batch_size=batch_size, ds_mult=ds_mult,
             shuffle=True, x_transform=x_transform)
-    dcgm_mb = dcgm.BatchDCGM(my_mb, length, deltaT)
+    dcgm_mb = dcgm.BatchDCGM(my_mb, length, deltaT, fake_missing_p=args.fake_missing_p)
 
     my_mb_val = utils.TrajMiniBatch(Time_v, Xval, batch_size=batch_size, ds_mult=2,
             shuffle=True, x_transform=x_transform)
-    dcgm_mb_val = dcgm.BatchDCGM(my_mb_val, length, deltaT)
+    dcgm_mb_val = dcgm.BatchDCGM(my_mb_val, length, deltaT, fake_missing_p=args.fake_missing_p)
 
     
     encoder = create_encoder(length, D, z_size)
@@ -124,5 +124,6 @@ if __name__ == "__main__":
     parser.add_argument('--dt', type=float, default=1.0/180.0, help="Delta Time")
     parser.add_argument('--length', type=int, default=200, help="Length of the time series to model")
     parser.add_argument('--batch_size', type=int, default=256, help="Size of each minibatch")
+    parser.add_argument('--fake_missing_p', type=float, default=0.0, help="Fake probability of missing observations")
     args = parser.parse_args()
     main(args)

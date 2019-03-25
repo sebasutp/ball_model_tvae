@@ -3,6 +3,7 @@ import numpy as np
 import keras
 import sklearn.preprocessing as prep
 import math
+import bisect
 
 def rotate_z(x, th, center):
     rm = np.array([[math.cos(th), -math.sin(th), 0],[math.sin(th), math.cos(th),0],[0,0,1]])
@@ -20,7 +21,9 @@ def transform_ball_traj(x, rotation_range, translation_range):
     #print(xt)
     return xt
 
-def shift_time(Times, X, length):
+def shift_time_length(Times, X, length):
+    """ Shifts time based on length
+    """
     nTimes = []
     nX = []
     for i, t in enumerate(Times):
@@ -32,6 +35,24 @@ def shift_time(Times, X, length):
         nTimes.append(t[start_ix:])
         nX.append(X[i][start_ix:])
     return nTimes, nX
+
+def shift_time_duration(Times, X, duration):
+    """ Shifts time based on duration
+    """
+    nTimes = []
+    nX = []
+    for i, t in enumerate(Times):
+        T = t[-1] - t[0]
+        t0_offset = T - duration
+        if t0_offset > 0:
+            t0 = np.random.rand() * t0_offset
+            start_ix = bisect.bisect_left(t - t[0], t0)
+        else:
+            start_ix = 0
+        nTimes.append(t[start_ix:])
+        nX.append(X[i][start_ix:])
+    return nTimes, nX
+
 
 def encode_fixed_dt(Times, Xreal, length, deltaT=1.0/180.0):
     """ Encode time series as with fixed time and missing observations
