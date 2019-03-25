@@ -60,7 +60,8 @@ def encode_fixed_dt(Times, Xreal, length, deltaT=1.0/180.0):
         Tn = len(Xreal[n])
         t_ix = -1
         for i in range(1,Tn):
-            assert(Times[n][i] > Times[n][i-1])
+            if Times[n][i] < Times[n][i-1]:
+                continue
             t = Times[n][i] - Times[n][0]
             t_ix = int(round(t / deltaT))
             if t_ix >= length:
