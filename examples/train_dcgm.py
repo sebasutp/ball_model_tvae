@@ -98,6 +98,12 @@ def main(args):
         Times = data['Times']
         X = data['X']
     N = len(Times)
+    
+    # Permute
+    perm = np.random.permutation(N)
+    X = X[perm]
+    Times = Times[perm]
+
     ntrain = int(round(N*args.p))
     nval = N-ntrain
     Xt = X[0:ntrain]
