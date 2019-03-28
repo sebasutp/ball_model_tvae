@@ -3,10 +3,13 @@ import traj_pred.trajectory as traj
 import traj_pred.utils as utils
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 import argparse
+import logging
 
 def main(args):
+    logging.basicConfig(level=logging.INFO)
     with open(args.data,'rb') as f:
         data = np.load(f, encoding='latin1')
         X = data['X']
@@ -25,7 +28,10 @@ def main(args):
         prev_times = t[0:given_ix+1]
         prev_obs = x[0:given_ix+1]
 
+        t1 = time.time()
         pred_mean, pred_cov = pred.traj_dist(prev_times, prev_obs, pred_times)
+        t2 = time.time()
+        logging.info("Prediction latency: {}".format(t2-t1))
         pred_std = utils.cov_to_std(pred_cov)
         plt.plot(prev_times, prev_obs, 'bo')
         plt.plot(t[given_ix+1:], x[given_ix+1:], 'ro')

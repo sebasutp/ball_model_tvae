@@ -7,7 +7,9 @@ import json
 import pickle
 import os
 import matplotlib.pyplot as plt
-
+import time
+import bisect
+import logging
 
 class Trajectory:
     """ Trajectory modeling with Deep Conditional Generative Model
@@ -56,27 +58,34 @@ class Trajectory:
         #1) First normalize and then encode. Very important!
         Xn, Xobs = utils.encode_fixed_dt([prev_times],[self.normalizer.transform(prev_obs)], 
                 self.length, self.deltaT)
-        z = np.random.normal(loc=0.0, scale=1.0, size=(self.samples,batch_size,self.z_size))
+        #z = np.random.normal(loc=0.0, scale=1.0, size=(self.samples,batch_size,self.z_size))
+        z = np.random.normal(loc=0.0, scale=1.0, size=(self.samples, self.z_size))
         if self.partial_encoder is not None:
+            t1 = time.time()
             mu_z, log_sig_z = self.partial_encoder.predict([Xn, Xobs])
+            t2 = time.time()
+            logging.info("DCGM Encoding time: {}".format(t2-t1))
             sig_z = np.sqrt( np.exp(log_sig_z) )
             z = mu_z + z*sig_z
-        y_n = np.array([self.decoder.predict([Xn,Xobs,z[i]]) for i in range(self.samples)])
+        Xn_rep = np.tile(Xn, (self.samples,1,1))
+        Xobs_rep = np.tile(Xobs, (self.samples,1,1))
+        t1 = time.time()
+        y_n = self.decoder.predict([Xn_rep, Xobs_rep, z])
+        t2 = time.time()
+        logging.info("DCGM Decoding time: {}".format(t2-t1))
         y = utils.apply_scaler(self.normalizer.inverse_transform, y_n)
         ixs = [int(round((x - prev_times[0])/self.deltaT)) for x in pred_times]
-        means = [] 
-        covs = []
-        for i in ixs:
-            if i < self.length:
-                y_mu = np.mean(y[:,0,i,:], axis=0)
-                y_Sigma = np.cov(y[:,0,i,:], rowvar=False)
-                bias_scale = self.samples/(self.samples-1)
-                y_Sigma = bias_scale*y_Sigma
-            else:
-                y_mu = np.mean(y[:,0,-1,:], axis=0)
-                y_Sigma = self.default_Sigma_y*np.eye(y.shape[-1])
-            means.append(y_mu)
-            covs.append(y_Sigma)
+        t1 = time.time()
+        means_model, covs_model = utils.empirical_traj_dist(y)
+        limit = bisect.bisect_left(ixs, self.length)
+        means = means_model[ixs[0:limit]]
+        covs = covs_model[ixs[0:limit]]
+        if limit < len(ixs):
+            missing = len(ixs) - limit
+            means = np.concatenate( ( means, np.tile(means[-1], (missing, 1)) ), axis=0)
+            covs = np.concatenate( ( covs, np.tile(self.default_Sigma_y*np.eye(y.shape[-1]), (missing,1,1)) ), axis=0)
+        t2 = time.time()
+        logging.info("DCGM Comp. distribution time: {}".format(t2-t1))
         return np.array(means), np.array(covs)
 
 def load_traj_model(path):
