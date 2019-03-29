@@ -111,7 +111,7 @@ def main(args):
     Xval = X[ntrain:]
     Time_val = Times[ntrain:]
 
-    model, t_pred, log_sig_y = train_ball_dcgm(Xt, Time_t, Xval, Time_val, length=args.length, deltaT=1.0/180.0, batch_size=args.batch_size, epochs=args.epochs)
+    model, t_pred, log_sig_y = train_ball_dcgm(Xt, Time_t, Xval, Time_val, length=args.length, deltaT=args.dt, batch_size=args.batch_size, epochs=args.epochs)
     print("Model trained")
     t_pred.save(args.model)
     print("Model saved")
